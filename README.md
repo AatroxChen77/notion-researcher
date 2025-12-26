@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**Author**: [AatroxChen](https://github.com/AatroxChen)
+**Author**: [AatroxChen](https://github.com/AatroxChen77)
 
 </div>
 
