@@ -43,3 +43,7 @@ config.yaml
 .DS_Store
 Thumbs.db
 archived/
+
+openspec/
+notes/
+AGENTS.md
