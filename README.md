@@ -7,6 +7,8 @@
 
 **Author**: [AatroxChen77](https://github.com/AatroxChen77)
 
+[中文说明](README_zh.md)
+
 </div>
 
 ---
