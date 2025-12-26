@@ -14,6 +14,7 @@ def main():
     parser.add_argument("file", help="Path to the Markdown file")
     parser.add_argument("--title", "-t", help="Title for the new Notion page")
     parser.add_argument("--target", "-p", help="Target Notion Page ID or URL (overrides config.yaml)")
+    parser.add_argument("--append", "-a", action="store_true", help="Append to target page instead of creating a child page")
     
     args = parser.parse_args()
 
@@ -65,13 +66,38 @@ def main():
         # Dependency Injection: Pass token and ID explicitly
         syncer = NotionSync(token=token, root_page_id=root_page_id)
         
-        new_page_id, new_page_url = syncer.create_child_page(page_title)
+        target_page_id = None
+        target_page_url = None # URL is not readily available if we append, unless we query, but we can skip showing it or assume user knows
+        
+        if args.append:
+            logger.info(f"🔄 Appending content directly to page {root_page_id}...")
+            target_page_id = root_page_id
+        else:
+            new_page_id, new_page_url = syncer.create_child_page(page_title)
+            target_page_id = new_page_id
+            target_page_url = new_page_url
         
         logger.info(f"Parsing file: {args.file}")
         blocks = parse_markdown_to_blocks(args.file)
         
-        syncer.push_blocks(new_page_id, blocks)
-        logger.info(f"✨ Sync complete! View your page here: {new_page_url}")
+        # Inject Title as H1 if Appending
+        if args.append:
+            title_block = {
+                "object": "block",
+                "type": "heading_1",
+                "heading_1": {
+                    "rich_text": [{"type": "text", "text": {"content": page_title}}]
+                }
+            }
+            blocks.insert(0, title_block)
+        
+        syncer.push_blocks(target_page_id, blocks)
+        
+        if target_page_url:
+             logger.info(f"✨ Sync complete! View your page here: {target_page_url}")
+        else:
+             logger.info(f"✨ Sync complete! Appended to page {target_page_id}.")
+             
     except Exception as e:
         logger.error(f"Sync failed: {e}")
         sys.exit(1)
