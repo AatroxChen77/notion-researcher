@@ -149,15 +149,16 @@ class NotionSync:
         parsed_rows = []
         for row in rows:
             # 1. Full-width Character Support: Normalize to half-width
+            # Note: This is also done in parse_file, but kept here for safety if called independently
             row = row.replace('｜', '|')
             
             # 2. Spacer/Divider Line Filter
             # Skip lines that are separator lines (e.g., |---|---|) or empty spacer lines (e.g., |   |)
             # Regex explains: 
             # ^ starts with
-            # [\s\|:\-]+ matches only whitespace, pipe, colon, or dash
+            # [\s\|:\-－]+ matches only whitespace, pipe, colon, dash (half-width), or dash (full-width)
             # $ ends with
-            if re.match(r'^[\s\|:\-]+$', row):
+            if re.match(r'^[\s\|:\-－]+$', row):
                 continue
 
             cells = [cell.strip() for cell in row.split('|')]
@@ -170,7 +171,7 @@ class NotionSync:
             max_cols = max(max_cols, len(cells))
             
         if not parsed_rows:
-            logger.debug("Table block creation failed: No valid rows after filtering.")
+            logger.warning(f"Table block creation failed: No valid rows found in buffer. First few lines: {rows[:3]}")
             return None
 
         for cells in parsed_rows:
@@ -215,8 +216,12 @@ class NotionSync:
         for i, line in enumerate(lines):
             stripped_line = line.strip()
             
-            # 3. State Machine Robustness: Check for both half-width and full-width pipes
-            if stripped_line.startswith('|') or stripped_line.startswith('｜'):
+            # 3. Optimize Main Loop: Normalize full-width pipes immediately
+            if '｜' in stripped_line:
+                stripped_line = stripped_line.replace('｜', '|')
+            
+            # 4. Table Detection
+            if stripped_line.startswith('|'):
                 if not in_table_mode:
                     in_table_mode = True
                     logger.debug(f"Entered table mode at line {i+1}")
@@ -230,13 +235,17 @@ class NotionSync:
                         blocks.append(table_block)
                         logger.debug(f"Created table block with {len(table_buffer)} raw rows.")
                     else:
-                        logger.warning(f"Failed to create table block from buffer ending at line {i}. Buffer content: {table_buffer}")
+                        # Warning is already logged in _create_table_block
+                        pass
                     table_buffer = []
                 in_table_mode = False
             
             if not stripped_line:
                 continue
 
+            # 5. Ordered List Support
+            ordered_list_match = re.match(r'^(\d+)\.\s+(.*)', stripped_line)
+            
             if stripped_line.startswith('### '):
                 blocks.append({
                     "object": "block",
@@ -261,6 +270,13 @@ class NotionSync:
                     "type": "bulleted_list_item",
                     "bulleted_list_item": {"rich_text": self._parse_inline_elements(stripped_line[2:])}
                 })
+            elif ordered_list_match:
+                content = ordered_list_match.group(2)
+                blocks.append({
+                    "object": "block",
+                    "type": "numbered_list_item",
+                    "numbered_list_item": {"rich_text": self._parse_inline_elements(content)}
+                })
             elif stripped_line.startswith('$$') and stripped_line.endswith('$$'):
                 expression = stripped_line[2:-2].strip()
                 blocks.append({
@@ -280,7 +296,7 @@ class NotionSync:
             if table_block:
                 blocks.append(table_block)
             else:
-                logger.warning(f"Failed to create table block from final buffer. Buffer content: {table_buffer}")
+                pass
             
         return blocks
 
