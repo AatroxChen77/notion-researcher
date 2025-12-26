@@ -138,23 +138,41 @@ class NotionSync:
                 
         return rich_text
 
-    def _create_table_block(self, rows: List[str]) -> Dict[str, Any]:
+    def _create_table_block(self, rows: List[str]) -> Optional[Dict[str, Any]]:
         """
         Constructs a Notion table block from a list of markdown table rows.
+        Returns None if no valid rows are found.
         """
         table_rows = []
         max_cols = 0
         
         parsed_rows = []
         for row in rows:
+            # 1. Full-width Character Support: Normalize to half-width
+            row = row.replace('｜', '|')
+            
+            # 2. Spacer/Divider Line Filter
+            # Skip lines that are separator lines (e.g., |---|---|) or empty spacer lines (e.g., |   |)
+            # Regex explains: 
+            # ^ starts with
+            # [\s\|:\-]+ matches only whitespace, pipe, colon, or dash
+            # $ ends with
+            if re.match(r'^[\s\|:\-]+$', row):
+                continue
+
             cells = [cell.strip() for cell in row.split('|')]
             if row.strip().startswith('|') and len(cells) > 0 and cells[0] == '':
                 cells.pop(0)
             if row.strip().endswith('|') and len(cells) > 0 and cells[-1] == '':
                 cells.pop()
+            
             parsed_rows.append(cells)
             max_cols = max(max_cols, len(cells))
             
+        if not parsed_rows:
+            logger.debug("Table block creation failed: No valid rows after filtering.")
+            return None
+
         for cells in parsed_rows:
             while len(cells) < max_cols:
                 cells.append("")
@@ -171,7 +189,7 @@ class NotionSync:
             "type": "table",
             "table": {
                 "table_width": max_cols,
-                "has_column_header": False, 
+                "has_column_header": False,  # Notion doesn't support setting this via API easily without extra logic
                 "has_row_header": False,
                 "children": table_rows
             }
@@ -194,50 +212,57 @@ class NotionSync:
         table_buffer: List[str] = []
         in_table_mode = False
         
-        for line in lines:
-            line = line.strip()
+        for i, line in enumerate(lines):
+            stripped_line = line.strip()
             
-            if line.startswith('|'):
+            # 3. State Machine Robustness: Check for both half-width and full-width pipes
+            if stripped_line.startswith('|') or stripped_line.startswith('｜'):
                 if not in_table_mode:
                     in_table_mode = True
-                table_buffer.append(line)
+                    logger.debug(f"Entered table mode at line {i+1}")
+                table_buffer.append(stripped_line)
                 continue 
             
             if in_table_mode:
                 if table_buffer:
-                    blocks.append(self._create_table_block(table_buffer))
+                    table_block = self._create_table_block(table_buffer)
+                    if table_block:
+                        blocks.append(table_block)
+                        logger.debug(f"Created table block with {len(table_buffer)} raw rows.")
+                    else:
+                        logger.warning(f"Failed to create table block from buffer ending at line {i}. Buffer content: {table_buffer}")
                     table_buffer = []
                 in_table_mode = False
             
-            if not line:
+            if not stripped_line:
                 continue
 
-            if line.startswith('### '):
+            if stripped_line.startswith('### '):
                 blocks.append({
                     "object": "block",
                     "type": "heading_3",
-                    "heading_3": {"rich_text": self._parse_inline_elements(line[4:])}
+                    "heading_3": {"rich_text": self._parse_inline_elements(stripped_line[4:])}
                 })
-            elif line.startswith('## '):
+            elif stripped_line.startswith('## '):
                 blocks.append({
                     "object": "block",
                     "type": "heading_2",
-                    "heading_2": {"rich_text": self._parse_inline_elements(line[3:])}
+                    "heading_2": {"rich_text": self._parse_inline_elements(stripped_line[3:])}
                 })
-            elif line.startswith('# '):
+            elif stripped_line.startswith('# '):
                 blocks.append({
                     "object": "block",
                     "type": "heading_1",
-                    "heading_1": {"rich_text": self._parse_inline_elements(line[2:])}
+                    "heading_1": {"rich_text": self._parse_inline_elements(stripped_line[2:])}
                 })
-            elif line.startswith('- ') or line.startswith('* '):
+            elif stripped_line.startswith('- ') or stripped_line.startswith('* '):
                 blocks.append({
                     "object": "block",
                     "type": "bulleted_list_item",
-                    "bulleted_list_item": {"rich_text": self._parse_inline_elements(line[2:])}
+                    "bulleted_list_item": {"rich_text": self._parse_inline_elements(stripped_line[2:])}
                 })
-            elif line.startswith('$$') and line.endswith('$$'):
-                expression = line[2:-2].strip()
+            elif stripped_line.startswith('$$') and stripped_line.endswith('$$'):
+                expression = stripped_line[2:-2].strip()
                 blocks.append({
                     "object": "block",
                     "type": "equation",
@@ -247,11 +272,15 @@ class NotionSync:
                 blocks.append({
                     "object": "block",
                     "type": "paragraph",
-                    "paragraph": {"rich_text": self._parse_inline_elements(line)}
+                    "paragraph": {"rich_text": self._parse_inline_elements(stripped_line)}
                 })
         
         if in_table_mode and table_buffer:
-            blocks.append(self._create_table_block(table_buffer))
+            table_block = self._create_table_block(table_buffer)
+            if table_block:
+                blocks.append(table_block)
+            else:
+                logger.warning(f"Failed to create table block from final buffer. Buffer content: {table_buffer}")
             
         return blocks
 
@@ -265,7 +294,7 @@ class NotionSync:
 
         logger.info(f"Pushing {len(blocks)} blocks to Page {target_page_id}...")
         
-        batch_size = 100
+        batch_size = 50
         for i in range(0, len(blocks), batch_size):
             batch = blocks[i : i + batch_size]
             try:
