@@ -65,6 +65,8 @@ It solves the common "copy-paste" formatting issues by parsing standard Markdown
     # root_page_id: "..."
     ```
 
+> For a detailed step-by-step guide on getting your Token and Page ID, please refer to the [Notion API Configuration Guide](docs/Notion%20API%20配置指南%20(保姆级教程).md).
+
 ---
 
 ## <span id="usage">🚀 Usage</span>

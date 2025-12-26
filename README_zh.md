@@ -65,6 +65,8 @@
     # root_page_id: "..."
     ```
 
+> 详细的 Token 和 Page ID 获取步骤，请参考 [Notion API 配置指南 (保姆级教程)](docs/Notion%20API%20配置指南%20(保姆级教程).md)。
+
 ---
 
 ## <span id="usage">🚀 使用方法</span>
