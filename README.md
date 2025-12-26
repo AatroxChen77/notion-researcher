@@ -5,7 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**Author**: [AatroxChen](https://github.com/AatroxChen77)
+**Author**: [AatroxChen77](https://github.com/AatroxChen77)
 
 </div>
 
@@ -45,7 +45,7 @@ It solves the common "copy-paste" formatting issues by parsing standard Markdown
 
 1.  **Clone the repository**:
     ```bash
-    git clone https://github.com/AatroxChen/notion-researcher.git
+    git clone https://github.com/AatroxChen77/notion-researcher.git
     cd notion-researcher
     ```
 
