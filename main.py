@@ -27,32 +27,23 @@ class ConfigLoader:
     def load_config() -> Dict[str, str]:
         """
         Loads configuration from config.yaml.
-        If file doesn't exist, creates a template and exits.
+        If file doesn't exist, creates a template.
         """
         if not os.path.exists(CONFIG_FILE):
             logger.warning(f"Configuration file '{CONFIG_FILE}' not found.")
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 f.write(CONFIG_TEMPLATE)
-            logger.info(f"✅ Created template '{CONFIG_FILE}'. Please fill in your Notion Token and Root Page ID.")
-            sys.exit(1)
+            logger.info(f"✅ Created template '{CONFIG_FILE}'.")
+            # We don't exit here anymore to allow CLI override
+            return {}
 
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
-                
-            if not config or "notion_token" not in config or "root_page_id" not in config:
-                logger.error(f"❌ Invalid '{CONFIG_FILE}'. Missing 'notion_token' or 'root_page_id'.")
-                sys.exit(1)
-                
-            # Check for default placeholder values
-            if "YOUR_TOKEN_HERE" in config["notion_token"] or "YOUR_ROOT_PAGE_ID_HERE" in config["root_page_id"]:
-                logger.error(f"❌ Please update '{CONFIG_FILE}' with your actual credentials.")
-                sys.exit(1)
-                
-            return config
+            return config or {}
         except Exception as e:
             logger.error(f"❌ Failed to load config: {e}")
-            sys.exit(1)
+            return {}
 
 class NotionSync:
     def __init__(self, config: Dict[str, str]):
@@ -327,15 +318,77 @@ class NotionSync:
 
         logger.info("Push completed successfully!")
 
+def extract_page_id(input_str: str) -> str:
+    """
+    Extracts a 32-character Notion Page ID from a string (raw ID or URL).
+    Ignores query parameters (after '?').
+    
+    Args:
+        input_str: Raw Page ID or Notion URL.
+        
+    Returns:
+        The 32-character Page ID.
+        
+    Raises:
+        ValueError: If no valid ID is found.
+    """
+    # Remove query parameters to avoid false positives
+    clean_input = input_str.split('?')[0]
+    
+    # Match 32-character hex string
+    match = re.search(r'([a-f0-9]{32})', clean_input)
+    if match:
+        return match.group(1)
+    
+    raise ValueError(f"Could not extract a valid 32-char Page ID from: '{input_str}'")
+
 def main():
     parser = argparse.ArgumentParser(description="Notion Researcher - Sync Markdown to Notion")
     parser.add_argument("file", help="Path to the Markdown file")
     parser.add_argument("--title", "-t", help="Title for the new Notion page")
+    parser.add_argument("--target", "-p", help="Target Notion Page ID or URL (overrides config.yaml)")
     
     args = parser.parse_args()
+
+    if not os.path.exists(args.file):
+        logger.error(f"File not found: {args.file}")
+        sys.exit(1)
     
     # 1. Load Configuration
     config = ConfigLoader.load_config()
+    
+    # Resolve Notion Token
+    token = config.get("notion_token")
+    if not token or "YOUR_TOKEN_HERE" in token:
+        logger.error("❌ Missing valid 'notion_token' in config.yaml.")
+        sys.exit(1)
+        
+    # Resolve Root Page ID
+    root_page_id = None
+    
+    # Priority 1: CLI Argument
+    if args.target:
+        try:
+            root_page_id = extract_page_id(args.target)
+            logger.info(f"🎯 Using Target Page ID from CLI: {root_page_id}")
+        except ValueError as e:
+            logger.error(f"❌ Invalid --target argument: {e}")
+            sys.exit(1)
+            
+    # Priority 2: Config File
+    elif config.get("root_page_id") and "YOUR_ROOT_PAGE_ID_HERE" not in config.get("root_page_id"):
+        root_page_id = config.get("root_page_id")
+        logger.info(f"📂 Using Root Page ID from config.yaml: {root_page_id}")
+        
+    # Cold Start / Failure
+    else:
+        logger.error("❌ No Target Page ID found. Please either:\n"
+                     "   1. Provide it via --target <id_or_url>\n"
+                     "   2. Set 'root_page_id' in config.yaml")
+        sys.exit(1)
+        
+    # Update config with resolved ID
+    config["root_page_id"] = root_page_id
     
     # 2. Determine Title
     page_title = args.title
