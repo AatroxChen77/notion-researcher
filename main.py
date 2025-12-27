@@ -11,7 +11,7 @@ logger = setup_logging()
 
 def main():
     parser = argparse.ArgumentParser(description="Notion Researcher - Sync Markdown to Notion")
-    parser.add_argument("file", help="Path to the Markdown file")
+    parser.add_argument("file",default="notes/tmp.md", help="Path to the Markdown file")
     parser.add_argument("--title", "-t", help="Title for the new Notion page")
     parser.add_argument("--target", "-p", help="Target Notion Page ID or URL (overrides config.yaml)")
     parser.add_argument("--append", "-a", action="store_true", help="Append to target page instead of creating a child page")
