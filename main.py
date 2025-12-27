@@ -10,19 +10,51 @@ from src.parser import parse_markdown_to_blocks
 logger = setup_logging()
 
 def main():
-    parser = argparse.ArgumentParser(description="Notion Researcher - Sync Markdown to Notion")
-    parser.add_argument("file",default="notes/tmp.md", help="Path to the Markdown file")
-    parser.add_argument("--title", "-t", help="Title for the new Notion page")
-    parser.add_argument("--target", "-p", help="Target Notion Page ID or URL (overrides config.yaml)")
+    parser = argparse.ArgumentParser(description="Notion Researcher - Sync Markdown to Notion",
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument("file", nargs="?", default="notes/tmp.md",help="Path to the Markdown file", metavar="FILE_PATH")
+    parser.add_argument("--title", "-t", help="Title for the new Notion page", metavar="PAGE_TITLE")
+    parser.add_argument("--target", "-p", help="Target Notion Page ID or URL (overrides config.yaml)", metavar="ID_OR_URL")
     parser.add_argument("--append", "-a", action="store_true", help="Append to target page instead of creating a child page")
     
     args = parser.parse_args()
 
+    # Step 1: Validate File Existence
     if not os.path.exists(args.file):
         logger.error(f"File not found: {args.file}")
         sys.exit(1)
     
-    # 1. Load Configuration
+    # Step 2: Fail Fast - Parse Markdown Immediately
+    logger.info(f"Parsing file: {args.file}")
+    try:
+        blocks = parse_markdown_to_blocks(args.file)
+    except Exception as e:
+        logger.error(f"Failed to parse markdown: {e}")
+        sys.exit(1)
+
+    if not blocks:
+        logger.warning(f"No content found in {args.file}. Exiting.")
+        sys.exit(0)
+
+    # Prepare Title
+    page_title = args.title
+    if not page_title:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        page_title = f"{timestamp} Log"
+        
+    # Optimization: Inject Title as H1 if Appending
+    if args.append:
+        title_block = {
+            "object": "block",
+            "type": "heading_1",
+            "heading_1": {
+                "rich_text": [{"type": "text", "text": {"content": page_title}}]
+            }
+        }
+        blocks.insert(0, title_block)
+    
+    # Step 3: Load Configuration (Only if parsing succeeded)
     config = ConfigLoader.load_config()
     
     # Resolve Notion Token
@@ -55,13 +87,7 @@ def main():
                      "   2. Set 'root_page_id' in config.yaml")
         sys.exit(1)
         
-    # 2. Determine Title
-    page_title = args.title
-    if not page_title:
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        page_title = f"{timestamp} Log"
-        
-    # 3. Initialize Client and Sync
+    # Step 4: Initialize Client and Sync
     try:
         # Dependency Injection: Pass token and ID explicitly
         syncer = NotionSync(token=token, root_page_id=root_page_id)
@@ -77,24 +103,15 @@ def main():
             target_page_id = new_page_id
             target_page_url = new_page_url
         
-        logger.info(f"Parsing file: {args.file}")
-        blocks = parse_markdown_to_blocks(args.file)
-        
-        # Inject Title as H1 if Appending
-        if args.append:
-            title_block = {
-                "object": "block",
-                "type": "heading_1",
-                "heading_1": {
-                    "rich_text": [{"type": "text", "text": {"content": page_title}}]
-                }
-            }
-            blocks.insert(0, title_block)
-        
         syncer.push_blocks(target_page_id, blocks)
         
-        if target_page_url:
-             logger.info(f"✨ Sync complete! View your page here: {target_page_url}")
+        # Logging optimization
+        final_url = target_page_url
+        if not final_url and args.target and "http" in args.target:
+             final_url = args.target
+        
+        if final_url:
+             logger.info(f"✨ Sync complete! View your page here: {final_url}")
         else:
              logger.info(f"✨ Sync complete! Appended to page {target_page_id}.")
              
