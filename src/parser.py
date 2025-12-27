@@ -6,8 +6,8 @@ logger = logging.getLogger(__name__)
 
 def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
     """
-    Parses inline elements: LaTeX equations ($...$) and Bold (**...**).
-    Priority: Equation > Bold
+    Parses inline elements: LaTeX equations ($...$), Links ([...](...)), and Bold (**...**).
+    Priority: Equation > Link > Bold
     
     Args:
         text_content: The raw text string to parse.
@@ -15,6 +15,7 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
     Returns:
         A list of Notion rich text objects.
     """
+    # 1. Split by Math
     math_pattern = r'(\$[^\$]+\$)'
     segments = re.split(math_pattern, text_content)
     
@@ -31,25 +32,58 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
                 "equation": {"expression": expression}
             })
         else:
-            bold_pattern = r'(\*\*[^\*]+\*\*)'
-            sub_segments = re.split(bold_pattern, seg)
+            # 2. Split by Link (New Layer)
+            # Use negative lookbehind to ensure we don't match images ![...]
+            link_pattern = r'(?<!\!)(\[[^\]]+\]\([^\)]+\))'
+            link_segments = re.split(link_pattern, seg)
             
-            for sub in sub_segments:
-                if not sub:
+            for link_seg in link_segments:
+                if not link_seg:
                     continue
                 
-                if sub.startswith('**') and sub.endswith('**') and len(sub) > 4:
-                    content = sub[2:-2]
-                    rich_text.append({
-                        "type": "text",
-                        "text": {"content": content},
-                        "annotations": {"bold": True}
-                    })
+                # Check if it matches the link pattern explicitly
+                # (re.split includes separators, so we check if this segment is a link)
+                if re.match(link_pattern, link_seg):
+                    # Extract text and url
+                    # Pattern: [text](url)
+                    match = re.match(r'\[([^\]]+)\]\(([^\)]+)\)', link_seg)
+                    if match:
+                        link_text = match.group(1)
+                        link_url = match.group(2)
+                        rich_text.append({
+                            "type": "text",
+                            "text": {
+                                "content": link_text,
+                                "link": {"url": link_url}
+                            }
+                        })
+                    else:
+                        # Should not happen if re.split worked correctly, but fallback
+                        rich_text.append({
+                            "type": "text",
+                            "text": {"content": link_seg}
+                        })
                 else:
-                    rich_text.append({
-                        "type": "text",
-                        "text": {"content": sub}
-                    })
+                    # 3. Split by Bold (Existing Layer)
+                    bold_pattern = r'(\*\*[^\*]+\*\*)'
+                    sub_segments = re.split(bold_pattern, link_seg)
+                    
+                    for sub in sub_segments:
+                        if not sub:
+                            continue
+                        
+                        if sub.startswith('**') and sub.endswith('**') and len(sub) > 4:
+                            content = sub[2:-2]
+                            rich_text.append({
+                                "type": "text",
+                                "text": {"content": content},
+                                "annotations": {"bold": True}
+                            })
+                        else:
+                            rich_text.append({
+                                "type": "text",
+                                "text": {"content": sub}
+                            })
             
     return rich_text
 
@@ -218,6 +252,15 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {"rich_text": parse_inline_elements(content)}
+            })
+
+        # --- Ordered List ---
+        elif re.match(r'^\d+\.\s', line.strip()):
+            content = re.sub(r'^\d+\.\s', '', line.strip(), count=1)
+            blocks.append({
+                "object": "block",
+                "type": "numbered_list_item",
+                "numbered_list_item": {"rich_text": parse_inline_elements(content)}
             })
             
         # --- Default: Paragraph ---
