@@ -16,7 +16,7 @@ def main():
     parser.add_argument("file", nargs="?", default="notes/tmp.md",help="Path to the Markdown file", metavar="FILE_PATH")
     parser.add_argument("--title", "-t", help="Title for the new Notion page", metavar="PAGE_TITLE")
     parser.add_argument("--target", "-p", help="Target Notion Page ID or URL (overrides config.yaml)", metavar="ID_OR_URL")
-    parser.add_argument("--append", "-a", action="store_true", help="Append to target page instead of creating a child page")
+    parser.add_argument("--new", "-n", action="store_true", help="Force create a new child page instead of appending to the target (Default is Append mode)")
     
     args = parser.parse_args()
 
@@ -43,8 +43,8 @@ def main():
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         page_title = f"{timestamp} Log"
         
-    # Optimization: Inject Title as H1 if Appending
-    if args.append:
+    # Optimization: Inject Title as H1 if Appending (Default behavior)
+    if not args.new:
         title_block = {
             "object": "block",
             "type": "heading_1",
@@ -95,13 +95,14 @@ def main():
         target_page_id = None
         target_page_url = None # URL is not readily available if we append, unless we query, but we can skip showing it or assume user knows
         
-        if args.append:
-            logger.info(f"🔄 Appending content directly to page {root_page_id}...")
-            target_page_id = root_page_id
-        else:
+        if args.new:
+            logger.info(f"🆕 Creating a new child page '{page_title}' under {root_page_id}...")
             new_page_id, new_page_url = syncer.create_child_page(page_title)
             target_page_id = new_page_id
             target_page_url = new_page_url
+        else:
+            logger.info(f"🔄 Appending content directly to page {root_page_id} (Default Mode)...")
+            target_page_id = root_page_id
         
         syncer.push_blocks(target_page_id, blocks)
         
