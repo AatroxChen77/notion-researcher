@@ -23,9 +23,9 @@
 
 ## 📖 Introduction
 
-**Notion Researcher** is a robust CLI tool designed to streamline the workflow of syncing local Markdown documentation to Notion.
+**Notion Researcher** is a robust CLI tool designed to streamline the workflow of syncing local Markdown documentation to Notion. It bridges the gap between local editing and Notion's collaborative workspace by robustly parsing Markdown—including tables, LaTeX equations, and images—and publishing them as native Notion blocks.
 
-It solves common "copy-paste" formatting issues by parsing standard Markdown files—including complex elements like **Tables**, **Images**, and **LaTeX equations**—and automatically publishing them as perfectly formatted pages in your Notion workspace. This tool is tailored for researchers and developers who prefer local editing but need a centralized, sharable knowledge base.
+It solves common "copy-paste" formatting issues by parsing standard Markdown files and automatically publishing them as perfectly formatted pages in your Notion workspace. This tool is tailored for researchers and developers who prefer local editing but need a centralized, sharable knowledge base.
 
 ---
 
@@ -36,8 +36,8 @@ It solves common "copy-paste" formatting issues by parsing standard Markdown fil
     - **LaTeX Support**: Seamlessly converts inline (`$E=mc^2$`) and block (`$$...$$`) LaTeX math expressions into native Notion equation blocks.
     - **Rich Text & Images**: Preserves **bold**, *italic*, and standard image syntax `![alt](url)`.
 - **🔄 Flexible Sync Modes**:
-    - **Child Page Creation**: By default, creates a new child page under your root database for each sync.
-    - **Append Mode**: Use the `--append` flag to add content to the bottom of an existing page instead of creating a new one.
+    - **Default Append Mode**: By default, appends content to the bottom of the target page, making it ideal for daily logging or continuous notes.
+    - **Child Page Creation**: Use the `--new` flag to force the creation of a new child page under your root database.
 - **🎯 Precise Control**:
     - **Target Override**: Specify a target Page ID or URL directly via CLI (`--target`), allowing you to sync to different pages without changing `config.yaml`.
     - **Auto-Timestamping**: If no title is provided, automatically generates a timestamped title (e.g., `2025-12-26 10:30 Log`).
@@ -75,18 +75,18 @@ It solves common "copy-paste" formatting issues by parsing standard Markdown fil
 
 ## <span id="usage">🚀 Usage</span>
 
-### 1. Basic Sync (New Child Page)
-Syncs the file as a new page under the configured root page.
+### 1. Basic Sync (Append Mode)
+By default, content is appended to the configured root page.
 ```bash
-python main.py notes.md --title "Research Weekly Report"
+python main.py notes.md
+```
+
+### 2. Create New Child Page
+Force the creation of a new child page under the root page.
+```bash
+python main.py notes.md --new --title "Research Weekly Report"
 ```
 *If `--title` is omitted, the current timestamp will be used.*
-
-### 2. Append to Existing Page
-Appends the content to the bottom of the target page instead of creating a new one.
-```bash
-python main.py notes.md --append
-```
 
 ### 3. Sync to a Specific Target
 Override the `root_page_id` in `config.yaml` for a one-off sync. Accepts ID or full URL.
@@ -100,7 +100,7 @@ python main.py notes.md --target "https://www.notion.so/My-Page-1234567890abcdef
 | `file` | - | Path to the Markdown file (Required). |
 | `--title` | `-t` | Title for the new Notion page. |
 | `--target` | `-p` | Target Notion Page ID or URL (overrides config). |
-| `--append` | `-a` | Append to target page instead of creating a child page. |
+| `--new` | `-n` | Force create a new child page instead of appending (Default is Append). |
 
 ---
 
@@ -123,6 +123,7 @@ The project follows a modular structure to separate concerns:
 ### Core Logic Highlights
 - **State Machine Parsing**: The parser in `src/parser.py` iterates through lines using a `while` loop, allowing it to "look ahead" and consume multiple lines for blocks like Tables and Block Equations (`$$`).
 - **Dependency Injection**: `main.py` injects configuration and tokens into `NotionSync`, keeping the core logic testable and independent of the CLI.
+- **Fail Fast**: The CLI validates file existence and parses Markdown *before* initializing the API client, ensuring quick feedback on input errors.
 
 ---
 
