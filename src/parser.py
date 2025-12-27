@@ -34,22 +34,23 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
         else:
             # 2. Split by Link (New Layer)
             # Use negative lookbehind to ensure we don't match images ![...]
-            link_pattern = r'(?<!\!)(\[[^\]]+\]\([^\)]+\))'
+            # Relaxed regex to allow empty text/url: [text](url) where text or url can be empty
+            link_pattern = r'(?<!\!)(\[[^\]]*\]\([^\)]*\))'
             link_segments = re.split(link_pattern, seg)
             
             for link_seg in link_segments:
                 if not link_seg:
                     continue
                 
-                # Check if it matches the link pattern explicitly
-                # (re.split includes separators, so we check if this segment is a link)
-                if re.match(link_pattern, link_seg):
-                    # Extract text and url
+                # Check if it matches the link pattern structure
+                # We check start/end characters instead of re.match again for performance/robustness
+                if link_seg.startswith('[') and link_seg.endswith(')'):
+                    # Extract text and url using strict anchored regex
                     # Pattern: [text](url)
-                    match = re.match(r'\[([^\]]+)\]\(([^\)]+)\)', link_seg)
+                    match = re.match(r'^\[(.*?)\]\((.*?)\)$', link_seg)
                     if match:
                         link_text = match.group(1)
-                        link_url = match.group(2)
+                        link_url = match.group(2).strip() # Strip whitespace from URL
                         rich_text.append({
                             "type": "text",
                             "text": {
@@ -58,7 +59,7 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
                             }
                         })
                     else:
-                        # Should not happen if re.split worked correctly, but fallback
+                        # Fallback if structure matches but regex fails (unlikely)
                         rich_text.append({
                             "type": "text",
                             "text": {"content": link_seg}
