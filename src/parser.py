@@ -340,6 +340,54 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
                 "type": "heading_3",
                 "heading_3": {"rich_text": parse_inline_elements(content)}
             })
+
+        # [NEW] Blockquote Logic with Nesting Support
+        elif line.strip().startswith('> '):
+            inner_content = line.strip()[2:].strip()
+            
+            # Sub-check: Is it a list inside a quote?
+            child_block = None
+            
+            # 1. Check for Bulleted List
+            if inner_content.startswith('- ') or inner_content.startswith('* '):
+                list_text = inner_content[2:]
+                child_block = {
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {"rich_text": parse_inline_elements(list_text)}
+                }
+            
+            # 2. Check for Numbered List
+            elif re.match(r'^\d+\.\s', inner_content):
+                list_text = re.sub(r'^\d+\.\s', '', inner_content, count=1)
+                child_block = {
+                    "object": "block",
+                    "type": "numbered_list_item",
+                    "numbered_list_item": {"rich_text": parse_inline_elements(list_text)}
+                }
+            
+            # Construct the Quote Block
+            if child_block:
+                # If it's a list, nest it in 'children'
+                # Note: 'rich_text' is required by API, can be empty or contain a space if children are present
+                blocks.append({
+                    "object": "block",
+                    "type": "quote",
+                    "quote": {
+                        "rich_text": [],
+                        "children": [child_block]
+                    }
+                })
+            else:
+                # Standard Text Quote
+                blocks.append({
+                    "object": "block",
+                    "type": "quote",
+                    "quote": {"rich_text": parse_inline_elements(inner_content)}
+                })
+            
+            i += 1
+            continue
             
         # --- Bullet Points ---
         elif line.startswith('- ') or line.startswith('* '):
