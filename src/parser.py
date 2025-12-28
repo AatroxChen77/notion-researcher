@@ -193,10 +193,18 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
 
         indent_level = len(raw_line) - len(raw_line.lstrip())
         
-        # [NEW] Clean Artifact Noise (e.g., 1111, 2222)
+        # [NEW] Clean Artifact Noise (e.g., 1111, 2222) with Transparent Logging
         # Regex matches word boundary + digit + same digit 3+ times + word boundary
-        # We apply this to stripped_line to clean content, but we keep raw_line for indentation if needed (though we already calc indent_level)
-        line = re.sub(r'\b(\d)\1{3,}\b', '', stripped_line)
+        
+        # Helper callback for logging
+        def _log_noise(match):
+            noise = match.group()
+            # Log with context (stripped_line is available in closure scope)
+            logger.warning(f"🧹 [Noise Cleaning] Removed '{noise}' from line: '{stripped_line[:50]}...'")
+            return ""
+
+        # Apply cleaning with callback
+        line = re.sub(r'\b(\d)\1{3,}\b', _log_noise, stripped_line)
         
         # --- Divider Detection ---
         if re.match(r'^[-*_]{3,}$', line):
