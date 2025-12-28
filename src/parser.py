@@ -32,59 +32,74 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
                 "equation": {"expression": expression}
             })
         else:
-            # 2. Split by Link (New Layer)
-            # Use negative lookbehind to ensure we don't match images ![...]
-            # Relaxed regex to allow empty text/url: [text](url) where text or url can be empty
-            link_pattern = r'(?<!\!)(\[[^\]]*\]\([^\)]*\))'
-            link_segments = re.split(link_pattern, seg)
+            # 2. Split by Inline Code (New Layer - Priority over Link/Bold)
+            # Match content wrapped in backticks `...`
+            # Use lookbehind/lookahead to avoid matching inside other structures if needed, 
+            # but generally splitting sequentially works.
+            code_pattern = r'(`[^`]+`)'
+            code_segments = re.split(code_pattern, seg)
             
-            for link_seg in link_segments:
-                if not link_seg:
+            for code_seg in code_segments:
+                if not code_seg:
                     continue
                 
-                # Check if it matches the link pattern structure
-                # We check start/end characters instead of re.match again for performance/robustness
-                if link_seg.startswith('[') and link_seg.endswith(')'):
-                    # Extract text and url using strict anchored regex
-                    # Pattern: [text](url)
-                    match = re.match(r'^\[(.*?)\]\((.*?)\)$', link_seg)
-                    if match:
-                        link_text = match.group(1)
-                        link_url = match.group(2).strip() # Strip whitespace from URL
-                        rich_text.append({
-                            "type": "text",
-                            "text": {
-                                "content": link_text,
-                                "link": {"url": link_url}
-                            }
-                        })
-                    else:
-                        # Fallback if structure matches but regex fails (unlikely)
-                        rich_text.append({
-                            "type": "text",
-                            "text": {"content": link_seg}
-                        })
+                if code_seg.startswith('`') and code_seg.endswith('`') and len(code_seg) > 2:
+                    content = code_seg[1:-1]
+                    rich_text.append({
+                        "type": "text",
+                        "text": {"content": content},
+                        "annotations": {"code": True}
+                    })
                 else:
-                    # 3. Split by Bold (Existing Layer)
-                    bold_pattern = r'(\*\*[^\*]+\*\*)'
-                    sub_segments = re.split(bold_pattern, link_seg)
+                    # 3. Split by Link
+                    # Use negative lookbehind to ensure we don't match images ![...]
+                    link_pattern = r'(?<!\!)(\[[^\]]*\]\([^\)]*\))'
+                    link_segments = re.split(link_pattern, code_seg)
                     
-                    for sub in sub_segments:
-                        if not sub:
+                    for link_seg in link_segments:
+                        if not link_seg:
                             continue
                         
-                        if sub.startswith('**') and sub.endswith('**') and len(sub) > 4:
-                            content = sub[2:-2]
-                            rich_text.append({
-                                "type": "text",
-                                "text": {"content": content},
-                                "annotations": {"bold": True}
-                            })
+                        # Check if it matches the link pattern structure
+                        if link_seg.startswith('[') and link_seg.endswith(')'):
+                            # Extract text and url using strict anchored regex
+                            match = re.match(r'^\[(.*?)\]\((.*?)\)$', link_seg)
+                            if match:
+                                link_text = match.group(1)
+                                link_url = match.group(2).strip()
+                                rich_text.append({
+                                    "type": "text",
+                                    "text": {
+                                        "content": link_text,
+                                        "link": {"url": link_url}
+                                    }
+                                })
+                            else:
+                                rich_text.append({
+                                    "type": "text",
+                                    "text": {"content": link_seg}
+                                })
                         else:
-                            rich_text.append({
-                                "type": "text",
-                                "text": {"content": sub}
-                            })
+                            # 4. Split by Bold
+                            bold_pattern = r'(\*\*[^\*]+\*\*)'
+                            sub_segments = re.split(bold_pattern, link_seg)
+                            
+                            for sub in sub_segments:
+                                if not sub:
+                                    continue
+                                
+                                if sub.startswith('**') and sub.endswith('**') and len(sub) > 4:
+                                    content = sub[2:-2]
+                                    rich_text.append({
+                                        "type": "text",
+                                        "text": {"content": content},
+                                        "annotations": {"bold": True}
+                                    })
+                                else:
+                                    rich_text.append({
+                                        "type": "text",
+                                        "text": {"content": sub}
+                                    })
             
     return rich_text
 
@@ -173,6 +188,51 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
         # Skip empty lines (unless part of a block structure if needed later)
         if not line:
             i += 1
+            continue
+
+        # --- Divider Detection ---
+        if re.match(r'^[-*_]{3,}$', line.strip()):
+            blocks.append({
+                "object": "block",
+                "type": "divider",
+                "divider": {}
+            })
+            i += 1
+            continue
+
+        # --- Code Block Detection ---
+        if line.strip().startswith('```'):
+            # Extract language (if any)
+            # Default to "plain text" if empty
+            lang = line.strip()[3:].strip()
+            if not lang:
+                lang = "plain text"
+            
+            i += 1
+            code_content = []
+            
+            while i < len(lines):
+                # Don't strip content lines to preserve indentation
+                # But check stripped version for closing fence
+                current_line = lines[i] # Preserve original indentation
+                if current_line.strip() == '```':
+                    i += 1
+                    break
+                code_content.append(current_line.rstrip()) # Right strip only
+                i += 1
+            
+            full_code = "\n".join(code_content)
+            blocks.append({
+                "object": "block",
+                "type": "code",
+                "code": {
+                    "language": lang,
+                    "rich_text": [{
+                        "type": "text",
+                        "text": {"content": full_code}
+                    }]
+                }
+            })
             continue
 
         # --- Table Detection ---
