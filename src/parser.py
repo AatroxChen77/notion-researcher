@@ -183,15 +183,19 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
 
     i = 0
     while i < len(lines):
-        line = lines[i].rstrip()
+        # Calculate indentation (spaces at the beginning)
+        raw_line = lines[i].rstrip('\n') # Keep indentation, remove newline
+        stripped_line = raw_line.strip()
         
-        # Skip empty lines (unless part of a block structure if needed later)
-        if not line:
+        if not stripped_line:
             i += 1
             continue
 
+        indent_level = len(raw_line) - len(raw_line.lstrip())
+        line = stripped_line # Use stripped line for content matching
+
         # --- Divider Detection ---
-        if re.match(r'^[-*_]{3,}$', line.strip()):
+        if re.match(r'^[-*_]{3,}$', line):
             blocks.append({
                 "object": "block",
                 "type": "divider",
@@ -201,10 +205,10 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
             continue
 
         # --- Code Block Detection ---
-        if line.strip().startswith('```'):
+        if line.startswith('```'):
             # Extract language (if any)
             # Default to "plain text" if empty
-            lang = line.strip()[3:].strip()
+            lang = line[3:].strip()
             if not lang:
                 lang = "plain text"
             
@@ -236,7 +240,7 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
             continue
 
         # --- Table Detection ---
-        if line.strip().startswith('|') or '｜' in line:
+        if line.startswith('|') or '｜' in line:
             table_buffer = []
             while i < len(lines) and (lines[i].strip().startswith('|') or '｜' in lines[i]):
                 table_buffer.append(lines[i].rstrip())
@@ -266,7 +270,7 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
             continue
             
         # --- Block Equation Detection ($$) ---
-        if line.strip() == '$$':
+        if line == '$$':
             i += 1
             equation_buffer = []
             while i < len(lines) and lines[i].strip() != '$$':
@@ -317,22 +321,40 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
             })
             
         # --- Bullet Points ---
-        elif line.strip().startswith('- ') or line.strip().startswith('* '):
-            content = line.strip()[2:]
-            blocks.append({
+        elif line.startswith('- ') or line.startswith('* '):
+            content = line[2:]
+            new_block = {
                 "object": "block",
                 "type": "bulleted_list_item",
                 "bulleted_list_item": {"rich_text": parse_inline_elements(content)}
-            })
+            }
+            
+            # Check for nesting
+            if indent_level >= 2 and blocks and blocks[-1]["type"] in ["bulleted_list_item", "numbered_list_item"]:
+                parent_type = blocks[-1]['type']
+                if 'children' not in blocks[-1][parent_type]:
+                    blocks[-1][parent_type]['children'] = []
+                blocks[-1][parent_type]['children'].append(new_block)
+            else:
+                blocks.append(new_block)
 
         # --- Ordered List ---
-        elif re.match(r'^\d+\.\s', line.strip()):
-            content = re.sub(r'^\d+\.\s', '', line.strip(), count=1)
-            blocks.append({
+        elif re.match(r'^\d+\.\s', line):
+            content = re.sub(r'^\d+\.\s', '', line, count=1)
+            new_block = {
                 "object": "block",
                 "type": "numbered_list_item",
                 "numbered_list_item": {"rich_text": parse_inline_elements(content)}
-            })
+            }
+            
+            # Check for nesting
+            if indent_level >= 2 and blocks and blocks[-1]["type"] in ["bulleted_list_item", "numbered_list_item"]:
+                parent_type = blocks[-1]['type']
+                if 'children' not in blocks[-1][parent_type]:
+                    blocks[-1][parent_type]['children'] = []
+                blocks[-1][parent_type]['children'].append(new_block)
+            else:
+                blocks.append(new_block)
             
         # --- Default: Paragraph with Implicit Nesting ---
         else:
@@ -343,6 +365,11 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
             }
 
             # Check if we should nest this paragraph under the previous list item
+            # Logic: If previous block is a list item, append as child regardless of indentation 
+            # (as per previous requirement for unindented descriptions).
+            # However, if we want strict indentation support, we might want to check indent_level here too.
+            # But the user's previous request was specifically for "no indent" descriptions.
+            # So we keep the previous logic: if previous is list, append.
             if blocks and blocks[-1]['type'] in ['bulleted_list_item', 'numbered_list_item']:
                 parent_type = blocks[-1]['type']
                 # Ensure 'children' list exists in the parent block's type object
