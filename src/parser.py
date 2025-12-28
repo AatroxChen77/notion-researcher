@@ -6,8 +6,8 @@ logger = logging.getLogger(__name__)
 
 def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
     """
-    Parses inline elements: LaTeX equations ($...$), Links ([...](...)), and Bold (**...**).
-    Priority: Equation > Link > Bold
+    Parses inline elements using a robust scanner approach (re.finditer).
+    Priority: Inline Code > Math > Image (Ignore) > Link > Bold
     
     Args:
         text_content: The raw text string to parse.
@@ -15,92 +15,90 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
     Returns:
         A list of Notion rich text objects.
     """
-    # 1. Split by Math
-    math_pattern = r'(\$[^\$]+\$)'
-    segments = re.split(math_pattern, text_content)
-    
+    if not text_content:
+        return []
+
+    # Master Regex with Named Groups
+    # Note: Order matters! Code & Math protect content from being parsed as Links/Bold.
+    pattern = re.compile(
+        r'(?P<code>`[^`]+`)|'                      # Code: `...`
+        r'(?P<math>\$[^\$]+\$)|'                   # Math: $...$
+        r'(?P<image>!\[[^\]]*\]\([^\)]*\))|'       # Image: ![...](...) (Ignore inline, handled by block parser or text)
+        r'(?P<link>\[[^\]]+\]\([^\)]+\))|'         # Link: [...](...)
+        r'(?P<bold>\*\*[^\*]+\*\*)'                # Bold: **...**
+    )
+
     rich_text = []
-    
-    for seg in segments:
-        if not seg:
-            continue
-            
-        if seg.startswith('$') and seg.endswith('$') and len(seg) > 2:
-            expression = seg[1:-1]
+    last_idx = 0
+
+    for match in pattern.finditer(text_content):
+        # 1. Handle Plain Text before the match
+        if match.start() > last_idx:
+            plain_text = text_content[last_idx:match.start()]
+            rich_text.append({
+                "type": "text",
+                "text": {"content": plain_text}
+            })
+
+        # 2. Handle the Match based on Group Name
+        kind = match.lastgroup
+        full_match = match.group()
+
+        if kind == 'code':
+            content = full_match[1:-1] # Strip backticks
+            rich_text.append({
+                "type": "text",
+                "text": {"content": content},
+                "annotations": {"code": True}
+            })
+        
+        elif kind == 'math':
+            expression = full_match[1:-1] # Strip $
             rich_text.append({
                 "type": "equation",
                 "equation": {"expression": expression}
             })
-        else:
-            # 2. Split by Inline Code (New Layer - Priority over Link/Bold)
-            # Match content wrapped in backticks `...`
-            # Use lookbehind/lookahead to avoid matching inside other structures if needed, 
-            # but generally splitting sequentially works.
-            code_pattern = r'(`[^`]+`)'
-            code_segments = re.split(code_pattern, seg)
-            
-            for code_seg in code_segments:
-                if not code_seg:
-                    continue
-                
-                if code_seg.startswith('`') and code_seg.endswith('`') and len(code_seg) > 2:
-                    content = code_seg[1:-1]
-                    rich_text.append({
-                        "type": "text",
-                        "text": {"content": content},
-                        "annotations": {"code": True}
-                    })
-                else:
-                    # 3. Split by Link
-                    # Use negative lookbehind to ensure we don't match images ![...]
-                    link_pattern = r'(?<!\!)(\[[^\]]*\]\([^\)]*\))'
-                    link_segments = re.split(link_pattern, code_seg)
-                    
-                    for link_seg in link_segments:
-                        if not link_seg:
-                            continue
-                        
-                        # Check if it matches the link pattern structure
-                        if link_seg.startswith('[') and link_seg.endswith(')'):
-                            # Extract text and url using strict anchored regex
-                            match = re.match(r'^\[(.*?)\]\((.*?)\)$', link_seg)
-                            if match:
-                                link_text = match.group(1)
-                                link_url = match.group(2).strip()
-                                rich_text.append({
-                                    "type": "text",
-                                    "text": {
-                                        "content": link_text,
-                                        "link": {"url": link_url}
-                                    }
-                                })
-                            else:
-                                rich_text.append({
-                                    "type": "text",
-                                    "text": {"content": link_seg}
-                                })
-                        else:
-                            # 4. Split by Bold
-                            bold_pattern = r'(\*\*[^\*]+\*\*)'
-                            sub_segments = re.split(bold_pattern, link_seg)
-                            
-                            for sub in sub_segments:
-                                if not sub:
-                                    continue
-                                
-                                if sub.startswith('**') and sub.endswith('**') and len(sub) > 4:
-                                    content = sub[2:-2]
-                                    rich_text.append({
-                                        "type": "text",
-                                        "text": {"content": content},
-                                        "annotations": {"bold": True}
-                                    })
-                                else:
-                                    rich_text.append({
-                                        "type": "text",
-                                        "text": {"content": sub}
-                                    })
-            
+
+        elif kind == 'link':
+            # Extract Text and URL from [Text](URL)
+            # We use a sub-regex here for safety
+            m = re.match(r'^\[(.*?)\]\((.*?)\)$', full_match)
+            if m:
+                link_text = m.group(1)
+                link_url = m.group(2).strip()
+                rich_text.append({
+                    "type": "text",
+                    "text": {
+                        "content": link_text,
+                        "link": {"url": link_url}
+                    }
+                })
+            else:
+                # Fallback if internal regex fails (rare)
+                rich_text.append({"type": "text", "text": {"content": full_match}})
+
+        elif kind == 'bold':
+            content = full_match[2:-2] # Strip **
+            rich_text.append({
+                "type": "text",
+                "text": {"content": content},
+                "annotations": {"bold": True}
+            })
+        
+        elif kind == 'image':
+            # Inline images are treated as plain text or ignored to prevent breaking layout
+            # (Block images are handled in the main loop)
+            rich_text.append({"type": "text", "text": {"content": full_match}})
+
+        last_idx = match.end()
+
+    # 3. Handle Remaining Text
+    if last_idx < len(text_content):
+        rich_text.append({
+            "type": "text",
+            "text": {"content": text_content[last_idx:]}
+        })
+
     return rich_text
 
 def create_table_block(rows: List[str]) -> Optional[Dict[str, Any]]:
