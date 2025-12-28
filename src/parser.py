@@ -204,8 +204,20 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
     while i < len(lines):
         # Calculate indentation (spaces at the beginning)
         raw_line = lines[i].rstrip('\n') # Keep indentation, remove newline
+        
+        # [Step 0] Pre-clean invisible chars
+        if '\u200b' in raw_line:
+            raw_line = raw_line.replace('\u200b', '')
+            
         stripped_line = raw_line.strip()
         
+        # [Step 1] Detect and Skip Empty Blockquote Lines (e.g. "> " or ">")
+        # LLMs often add these for visual spacing, but they break Notion rendering.
+        if re.match(r'^>+\s*$', stripped_line):
+            logger.debug(f"🧹 [Noise Cleaning] Skipped empty blockquote line at line {i+1}")
+            i += 1
+            continue
+
         if not stripped_line:
             i += 1
             continue
