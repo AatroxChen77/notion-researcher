@@ -8,24 +8,22 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
     """
     Parses inline elements using a robust scanner approach (re.finditer).
     Priority: Inline Code > Math > Image (Ignore) > Link > Bold
-    
-    Args:
-        text_content: The raw text string to parse.
-        
-    Returns:
-        A list of Notion rich text objects.
     """
     if not text_content:
         return []
 
     # Master Regex with Named Groups
-    # Note: Order matters! Code & Math protect content from being parsed as Links/Bold.
+    # 1. Code: `...` (Backticks)
+    # 2. Math: $...$ or $$...$$ (One or more $)
+    # 3. Image: ![...](...) (Zero or more content)
+    # 4. Link: [...](...) (Zero or more content - RELAXED from + to *)
+    # 5. Bold: **...**
     pattern = re.compile(
-        r'(?P<code>`[^`]+`)|'                      # Code: `...`
-        r'(?P<math>\$[^\$]+\$)|'                   # Math: $...$
-        r'(?P<image>!\[[^\]]*\]\([^\)]*\))|'       # Image: ![...](...) (Ignore inline, handled by block parser or text)
-        r'(?P<link>\[[^\]]+\]\([^\)]+\))|'         # Link: [...](...)
-        r'(?P<bold>\*\*[^\*]+\*\*)'                # Bold: **...**
+        r'(?P<code>`[^`]+`)|'
+        r'(?P<math>\$+(?:[^\$]+)\$+)|'
+        r'(?P<image>!\[[^\]]*\]\([^\)]*\))|'
+        r'(?P<link>\[[^\]]*\]\([^\)]*\))|'
+        r'(?P<bold>\*\*[^\*]+\*\*)'
     )
 
     rich_text = []
@@ -53,7 +51,8 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
             })
         
         elif kind == 'math':
-            expression = full_match[1:-1] # Strip $
+            # Robustly strip all leading/trailing $ (handles $...$ and $$...$$)
+            expression = full_match.strip('$')
             rich_text.append({
                 "type": "equation",
                 "equation": {"expression": expression}
@@ -61,11 +60,16 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
 
         elif kind == 'link':
             # Extract Text and URL from [Text](URL)
-            # We use a sub-regex here for safety
+            # Relaxed regex to allow empty parts (.*?)
             m = re.match(r'^\[(.*?)\]\((.*?)\)$', full_match)
             if m:
                 link_text = m.group(1)
+                # If text is empty, use URL as text
+                if not link_text:
+                    link_text = m.group(2)
+                
                 link_url = m.group(2).strip()
+                
                 rich_text.append({
                     "type": "text",
                     "text": {
@@ -74,7 +78,6 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
                     }
                 })
             else:
-                # Fallback if internal regex fails (rare)
                 rich_text.append({"type": "text", "text": {"content": full_match}})
 
         elif kind == 'bold':
@@ -86,8 +89,7 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
             })
         
         elif kind == 'image':
-            # Inline images are treated as plain text or ignored to prevent breaking layout
-            # (Block images are handled in the main loop)
+            # Inline images are treated as plain text
             rich_text.append({"type": "text", "text": {"content": full_match}})
 
         last_idx = match.end()
@@ -302,6 +304,16 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
                 "object": "block",
                 "type": "heading_3",
                 "heading_3": {"rich_text": parse_inline_elements(line[4:])}
+            })
+            
+        # [NEW] Fix for Notion limitation: Map H4, H5, H6 to Heading 3
+        elif line.startswith('####'):
+            # Strip all leading # and whitespace
+            content = line.lstrip('#').strip()
+            blocks.append({
+                "object": "block",
+                "type": "heading_3",
+                "heading_3": {"rich_text": parse_inline_elements(content)}
             })
             
         # --- Bullet Points ---
