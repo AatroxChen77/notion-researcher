@@ -305,7 +305,7 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
                 "type": "heading_3",
                 "heading_3": {"rich_text": parse_inline_elements(line[4:])}
             })
-            
+        
         # [NEW] Fix for Notion limitation: Map H4, H5, H6 to Heading 3
         elif line.startswith('####'):
             # Strip all leading # and whitespace
@@ -334,13 +334,24 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
                 "numbered_list_item": {"rich_text": parse_inline_elements(content)}
             })
             
-        # --- Default: Paragraph ---
+        # --- Default: Paragraph with Implicit Nesting ---
         else:
-            blocks.append({
+            paragraph_block = {
                 "object": "block",
                 "type": "paragraph",
                 "paragraph": {"rich_text": parse_inline_elements(line)}
-            })
+            }
+
+            # Check if we should nest this paragraph under the previous list item
+            if blocks and blocks[-1]['type'] in ['bulleted_list_item', 'numbered_list_item']:
+                parent_type = blocks[-1]['type']
+                # Ensure 'children' list exists in the parent block's type object
+                if 'children' not in blocks[-1][parent_type]:
+                    blocks[-1][parent_type]['children'] = []
+                
+                blocks[-1][parent_type]['children'].append(paragraph_block)
+            else:
+                blocks.append(paragraph_block)
             
         i += 1
         
