@@ -23,7 +23,8 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
         r'(?P<math>\$+(?:[^\$]+)\$+)|'
         r'(?P<image>!\[[^\]]*\]\([^\)]*\))|'
         r'(?P<link>\[[^\]]*\]\([^\)]*\))|'
-        r'(?P<bold>\*\*[^\*]+\*\*)'
+        r'(?P<bold>\*\*[^\*]+\*\*)|'
+        r'(?P<italic>\*(?:[^\*]+)\*|_(?:[^_]+)_)'
     )
 
     rich_text = []
@@ -88,6 +89,14 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
                 "annotations": {"bold": True}
             })
         
+        elif kind == 'italic':
+            content = full_match[1:-1] # Strip * or _
+            rich_text.append({
+                "type": "text",
+                "text": {"content": content},
+                "annotations": {"italic": True}
+            })
+
         elif kind == 'image':
             # Inline images are treated as plain text
             rich_text.append({"type": "text", "text": {"content": full_match}})
