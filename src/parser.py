@@ -192,8 +192,12 @@ def parse_markdown_to_blocks(file_path: str) -> List[Dict[str, Any]]:
             continue
 
         indent_level = len(raw_line) - len(raw_line.lstrip())
-        line = stripped_line # Use stripped line for content matching
-
+        
+        # [NEW] Clean Artifact Noise (e.g., 1111, 2222)
+        # Regex matches word boundary + digit + same digit 3+ times + word boundary
+        # We apply this to stripped_line to clean content, but we keep raw_line for indentation if needed (though we already calc indent_level)
+        line = re.sub(r'\b(\d)\1{3,}\b', '', stripped_line)
+        
         # --- Divider Detection ---
         if re.match(r'^[-*_]{3,}$', line):
             blocks.append({
