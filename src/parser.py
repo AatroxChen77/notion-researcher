@@ -83,19 +83,29 @@ def parse_inline_elements(text_content: str) -> List[Dict[str, Any]]:
 
         elif kind == 'bold':
             content = full_match[2:-2] # Strip **
-            rich_text.append({
-                "type": "text",
-                "text": {"content": content},
-                "annotations": {"bold": True}
-            })
+            # Recursively parse content inside the bold markers
+            sub_res = parse_inline_elements(content)
+            for obj in sub_res:
+                if obj.get("type") == "text":
+                    # Initialize annotations if missing
+                    if "annotations" not in obj:
+                        obj["annotations"] = {}
+                    # Apply bold style
+                    obj["annotations"]["bold"] = True
+            rich_text.extend(sub_res)
         
         elif kind == 'italic':
             content = full_match[1:-1] # Strip * or _
-            rich_text.append({
-                "type": "text",
-                "text": {"content": content},
-                "annotations": {"italic": True}
-            })
+            # Recursively parse content inside the italic markers
+            sub_res = parse_inline_elements(content)
+            for obj in sub_res:
+                if obj.get("type") == "text":
+                    # Initialize annotations if missing
+                    if "annotations" not in obj:
+                        obj["annotations"] = {}
+                    # Apply italic style
+                    obj["annotations"]["italic"] = True
+            rich_text.extend(sub_res)
 
         elif kind == 'image':
             # Inline images are treated as plain text
