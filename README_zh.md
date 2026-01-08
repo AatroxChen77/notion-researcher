@@ -37,7 +37,9 @@
     - **扩展标题**: 直接映射 H1-H3；自动将 H4-H6 映射为 Notion 的 Heading 3 以保持结构。
     - **列表与嵌套**: 支持无序/有序列表及 **隐式嵌套**（列表项后的段落自动作为子块嵌套）。
     - **噪声清洗**: 自动移除内容中常见的 OCR/PDF 伪影（如重复的 `1111`）。
-    - **富文本**: 完美支持粗体、斜体、代码和链接。
+    - **递归富文本**: 支持递归解析粗体、斜体、代码和链接（例如斜体中的**粗体**）。
+- **🧠 智能 CLI**:
+    - **URL 检测**: 自动检测第一个参数是否为 Notion URL/ID。如果未指定文件，默认将 `notes/tmp.md` 同步到该目标。
 - **🔄 灵活的同步模式**:
     - **默认追加模式**: 默认情况下，将内容追加到目标页面的底部，非常适合日常日志。
     - **子页面创建**: 使用 `--new` (`-n`) 强制在配置的根数据库下创建一个新的子页面。
@@ -81,20 +83,26 @@
 
 安装完成后，使用 `np` 命令（`notion-pusher` 的缩写）同步您的文件。
 
-### 1. 基础同步（追加模式）
+### 1. 智能模式 (快速同步)
+直接粘贴 Notion URL，将默认文件 (`notes/tmp.md`) 同步到该页面。
+```bash
+np https://www.notion.so/My-Page-1234567890abcdef
+```
+
+### 2. 基础同步（追加模式）
 默认情况下，内容将追加到配置的根页面。
 ```bash
 np notes.md
 ```
 
-### 2. 创建新子页面
+### 3. 创建新子页面
 强制在根页面下创建一个新的子页面。
 ```bash
 np notes.md --new --title "Research Weekly Report"
 ```
 *如果省略 `--title`，将使用当前时间戳作为标题。*
 
-### 3. 同步到指定目标
+### 4. 同步到指定目标
 覆盖 `config.yaml` 中的 `root_page_id` 进行一次性同步。支持 ID 或完整 URL。
 ```bash
 np notes.md --target "https://www.notion.so/My-Page-1234567890abcdef"
@@ -103,7 +111,7 @@ np notes.md --target "https://www.notion.so/My-Page-1234567890abcdef"
 ### CLI 参数说明
 | 参数 | 简写 | 说明 |
 | :--- | :--- | :--- |
-| `file` | - | Markdown 文件路径 (必填)。 |
+| `file` | - | Markdown 文件路径 (或智能模式下的目标 URL)。 |
 | `--title` | `-t` | 新 Notion 页面的标题。 |
 | `--target` | `-p` | 目标 Notion 页面 ID 或 URL (覆盖配置)。 |
 | `--new` | `-n` | 强制创建新子页面而不是追加 (默认为追加模式)。 |
@@ -117,10 +125,10 @@ np notes.md --target "https://www.notion.so/My-Page-1234567890abcdef"
 ```plaintext
 .
 ├── config.yaml          # 用户配置 (Token & Page ID)
-├── main.py              # CLI 入口点 (快速失败验证)
+├── main.py              # CLI 入口点 (智能 CLI & 快速失败验证)
 ├── src/
 │   ├── client.py        # NotionSync (批处理 & API 封装)
-│   ├── parser.py        # Markdown 解析器 (状态机 + 正则)
+│   ├── parser.py        # Markdown 解析器 (状态机 + 递归正则)
 │   └── utils.py         # 工具函数 (日志, 配置, ID 提取)
 ├── setup.py             # 包配置 (定义 `np` 命令)
 └── README.md            # 项目文档
@@ -129,6 +137,7 @@ np notes.md --target "https://www.notion.so/My-Page-1234567890abcdef"
 ### 核心组件
 - **快速失败策略**: `main.py` 立即验证文件存在并解析内容，如果出错则在网络请求前中止。
 - **状态机解析**: `src/parser.py` 使用状态机处理多行块（表格、公式），并使用带命名组的 `re.finditer` 处理行内元素。
+- **递归下降**: 行内解析通过递归处理嵌套样式（例如斜体中的**粗体**）。
 - **依赖注入**: 凭据和配置在运行时注入 `NotionSync`。
 
 ---

@@ -37,7 +37,9 @@ It solves common "copy-paste" formatting issues by parsing standard Markdown fil
     - **Extended Headers**: Maps H1-H3 directly; automatically maps H4-H6 to Notion's Heading 3 to preserve structure.
     - **Lists & Nesting**: Supports bullet/numbered lists and **Implicit Nesting** (paragraphs under list items are automatically nested).
     - **Noise Cleaning**: Automatically removes common OCR/PDF artifacts (e.g., `1111`) from content.
-    - **Rich Text**: Preserves bold, italic, code, and links.
+    - **Recursive Rich Text**: Recursively parses bold, italic, code, and links (e.g., **bold** inside *italic*).
+- **🧠 Smart CLI**:
+    - **URL Detection**: Automatically detects if the first argument is a Notion URL/ID. If no file is specified, it defaults to syncing `notes/tmp.md` to that target.
 - **🔄 Flexible Sync Modes**:
     - **Default Append Mode**: Appends content to the bottom of the target page, ideal for daily logging.
     - **Child Page Creation**: Use `--new` (`-n`) to create a new child page under your root database.
@@ -81,20 +83,26 @@ It solves common "copy-paste" formatting issues by parsing standard Markdown fil
 
 Once installed, use the `np` command (short for `notion-pusher`) to sync your files.
 
-### 1. Basic Sync (Append Mode)
+### 1. Smart Mode (Quick Sync)
+Directly paste a Notion URL to sync the default file (`notes/tmp.md`) to that page.
+```bash
+np https://www.notion.so/My-Page-1234567890abcdef
+```
+
+### 2. Basic Sync (Append Mode)
 By default, content is appended to the configured root page.
 ```bash
 np notes.md
 ```
 
-### 2. Create New Child Page
+### 3. Create New Child Page
 Force the creation of a new child page under the root page.
 ```bash
 np notes.md --new --title "Research Weekly Report"
 ```
 *If `--title` is omitted, the current timestamp will be used.*
 
-### 3. Sync to a Specific Target
+### 4. Sync to a Specific Target
 Override the `root_page_id` in `config.yaml` for a one-off sync. Accepts ID or full URL.
 ```bash
 np notes.md --target "https://www.notion.so/My-Page-1234567890abcdef"
@@ -103,7 +111,7 @@ np notes.md --target "https://www.notion.so/My-Page-1234567890abcdef"
 ### CLI Arguments
 | Argument | Short | Description |
 | :--- | :--- | :--- |
-| `file` | - | Path to the Markdown file (Required). |
+| `file` | - | Path to the Markdown file (or Target URL in Smart Mode). |
 | `--title` | `-t` | Title for the new Notion page. |
 | `--target` | `-p` | Target Notion Page ID or URL (overrides config). |
 | `--new` | `-n` | Force create a new child page instead of appending (Default is Append). |
@@ -117,10 +125,10 @@ The project follows a modular structure:
 ```plaintext
 .
 ├── config.yaml          # User configuration (Token & Page ID)
-├── main.py              # CLI entry point (Fail Fast validation)
+├── main.py              # CLI entry point (Smart CLI & Fail Fast validation)
 ├── src/
 │   ├── client.py        # NotionSync (Batching & API Wrapper)
-│   ├── parser.py        # Markdown Parser (State Machine + Regex)
+│   ├── parser.py        # Markdown Parser (State Machine + Recursive Regex)
 │   └── utils.py         # Utilities (Logging, Config, ID Extraction)
 ├── setup.py             # Package configuration (defines `np` command)
 └── README.md            # Project documentation
@@ -129,6 +137,7 @@ The project follows a modular structure:
 ### Key Components
 - **Fail Fast Strategy**: `main.py` validates file existence and parses content immediately, aborting before any network requests if errors occur.
 - **State Machine Parsing**: `src/parser.py` uses a state machine to handle multi-line blocks (Tables, Equations) and `re.finditer` with named groups for inline elements.
+- **Recursive Descent**: Inline parsing handles nested styles (e.g., **bold** inside *italic*) via recursion.
 - **Dependency Injection**: Credentials and configuration are injected into `NotionSync` at runtime.
 
 ---
