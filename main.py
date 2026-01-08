@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import argparse
 from datetime import datetime
 from src.utils import setup_logging, ConfigLoader, extract_page_id
@@ -19,6 +20,29 @@ def main():
     parser.add_argument("--new", "-n", action="store_true", help="Force create a new child page instead of appending to the target (Default is Append mode)")
     
     args = parser.parse_args()
+
+    # --- Smart CLI: Handle "np <URL>" case ---
+    # Check if the positional 'file' argument is actually a URL/ID
+    # Condition: 
+    # 1. args.file looks like a URL or ID
+    # 2. args.file does NOT exist as a file on disk
+    # 3. User did NOT provide an explicit --target (-p)
+    if args.file and not args.target:
+        potential_target = args.file
+        
+        # Check for 32-char hex string OR 36-char UUID with hyphens
+        is_valid_uuid = re.match(r'^[a-fA-F0-9]{32}$', potential_target) or \
+                        re.match(r'^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$', potential_target)
+                        
+        is_url_like = potential_target.startswith("http") or is_valid_uuid
+        
+        if is_url_like and not os.path.exists(potential_target):
+            logger.info(f"✨ Smart Mode: Detected URL/ID '{potential_target}' in file position.")
+            logger.info(f"   -> Treating it as the TARGET page.")
+            logger.info(f"   -> Processing default file: 'notes/tmp.md'")
+            
+            args.target = potential_target
+            args.file = "notes/tmp.md"
 
     # Step 1: Validate File Existence
     if not os.path.exists(args.file):
@@ -108,7 +132,7 @@ def main():
         
         # Logging optimization
         final_url = target_page_url
-        if not final_url and args.target and "http" in args.target:
+        if not final_url and args.target and args.target.startswith("http"):
              final_url = args.target
         
         if final_url:
